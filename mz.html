@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTF Arcade Game</title>
+    <!-- Tailwind CSS for basic layout and responsiveness -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for game aesthetics */
+        body {
+            font-family: 'Inter', sans-serif; /* Using Inter as per instructions */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #1a1a1a; /* Dark background for retro feel */
+            overflow: hidden; /* Prevent scrollbars */
+            color: #e0e0e0; /* Light text color */
+        }
+        canvas {
+            border: 4px solid #00ff00; /* Green border for arcade cabinet look */
+            background-color: #000000; /* Black background for the game area */
+            display: block; /* Remove extra space below canvas */
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5); /* Glowing effect */
+            border-radius: 8px; /* Rounded corners for the canvas */
+            width: 100%; /* Make canvas responsive */
+            max-width: 800px; /* Max width for desktop */
+            height: auto; /* Maintain aspect ratio */
+        }
+
+        /* Game Info HUD */
+        #game-info {
+            color: #00ff00; /* Retro green font */
+            font-family: 'Press Start 2P', cursive; /* A common retro pixel font, linked below */
+            font-size: 1.2em;
+            text-align: center;
+            margin-bottom: 10px;
+            padding: 10px 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            border: 2px solid #008000;
+            display: none; /* Hidden by default, shown when game starts */
+        }
+
+        /* Start/End Screens */
+        .game-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.9);
+            padding: 40px;
+            border: 4px solid #00ff00;
+            color: #00ff00;
+            font-family: 'Press Start 2P', cursive;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.7);
+            z-index: 10;
+            border-radius: 12px;
+            max-width: 90%; /* Responsive width */
+        }
+        .game-screen h2 {
+            font-size: 2em;
+            margin-bottom: 20px;
+            color: #00ff00;
+        }
+        .game-screen p {
+            font-size: 1em;
+            margin-bottom: 30px;
+        }
+        .game-screen button {
+            background-color: #008000;
+            color: #ffffff;
+            border: 2px solid #00ff00;
+            padding: 12px 25px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 1em;
+            cursor: pointer;
+            margin: 10px;
+            transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 255, 0, 0.3);
+        }
+        .game-screen button:hover {
+            background-color: #00ff00;
+            color: #000000;
+            box-shadow: 0 6px 12px rgba(0, 255, 0, 0.5);
+        }
+        /* Import a pixel font for arcade feel */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        /* LLM Insight Pop-up */
+        #llm-insight-popup {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.9);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.8em;
+            text-align: center;
+            max-width: 300px;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            z-index: 20;
+            display: none; /* Hidden by default */
+            animation: fadeInOut 4s forwards; /* Animation for display */
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(20px); }
+            10% { opacity: 1; transform: translateY(0); }
+            90% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(20px); }
+        }
+
+        /* Game Summary Insight on End Screen */
+        #game-summary-insight {
+            font-size: 0.9em;
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px dashed #008000;
+            border-radius: 8px;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-info" class="text-xl md:text-2xl">
+        SCORE: <span id="score">0</span> | LIVES: <span id="lives">3</span>
+    </div>
+
+    <div id="start-screen" class="game-screen">
+        <h2>MTF ARCADE GAME</h2>
+        <p>Navigate the MTF office, collect work samples, and dodge challenges!</p>
+        <button id="startButton">START GAME</button>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="end-screen" class="game-screen hidden">
+        <h2 id="end-message"></h2>
+        <p id="end-sub-message"></p>
+        <p id="game-summary-insight" class="text-sm mt-4"></p> <!-- New: Game Summary Insight -->
+        <button id="restartButton">PLAY AGAIN</button> <!-- Removed hidden class -->
+        <button id="portfolioButton" class="hidden">VIEW PORTFOLIO</button>
+        <button id="mtfWebsiteButton" class="hidden">VISIT MTF</button>
+    </div>
+
+    <div id="llm-insight-popup" class="absolute hidden">
+        <span id="llm-insight-text"></span>
+    </div>
+
+    <script>
+        // --- GAME INITIALIZATION AND SETUP ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startScreen = document.getElementById('start-screen');
+        const endScreen = document.getElementById('end-screen');
+        const gameInfo = document.getElementById('game-info');
+        const scoreDisplay = document.getElementById('score');
+        const livesDisplay = document.getElementById('lives');
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+        const portfolioButton = document.getElementById('portfolioButton');
+        const mtfWebsiteButton = document.getElementById('mtfWebsiteButton');
+        const endMessage = document.getElementById('end-message');
+        const endSubMessage = document.getElementById('end-sub-message');
+        const gameSummaryInsight = document.getElementById('game-summary-insight'); // New: Game Summary Insight element
+        const llmInsightPopup = document.getElementById('llm-insight-popup');
+        const llmInsightText = document.getElementById('llm-insight-text');
+
+        let gameRunning = false;
+        let score = 0;
+        let lives = 3;
+        let animationFrameId; // To store the requestAnimationFrame ID for stopping the loop
+        let insightTimeoutId; // To manage the LLM insight popup display
+
+        // --- GAME ASSETS (SOUNDS) ---
+        // Using Web Audio API for more reliable playback and control.
+        let audioContext;
+
+        // Function to play a simple sound using Web Audio API
+        function playSound(frequency, duration, type = 'sine', volume = 0.5) {
+            if (!audioContext) {
+                // Initialize AudioContext on first user interaction if not already done
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = frequency;
+            oscillator.type = type;
+            gainNode.gain.setValueAtTime(volume, audioContext.currentTime); // Set initial volume
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + duration); // Fade out
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+
+        // --- GAME CONSTANTS ---
+        const TILE_SIZE = 40; // Size of each maze cell in pixels
+        const PLAYER_SPEED = 4; // Pixels per frame for player movement
+        const ENEMY_SPEED = 1.5; // Pixels per frame for enemy movement
+        const ENEMY_MOVE_INTERVAL = 500; // Enemies change direction every 500ms
+        const INSIGHT_DISPLAY_TIME = 3000; // How long the LLM insight popup stays on screen (ms)
+        const EMOJI_FONT_SIZE = TILE_SIZE * 0.8; // Adjust emoji size relative to tile size
+        const LABEL_FONT_SIZE = TILE_SIZE * 0.25; // Adjust label size relative to tile size
+
+        // --- GAME STATE VARIABLES ---
+        let maze = []; // 2D array representing maze (0=path, 1=wall)
+        let player = { x: 0, y: 0, dx: 0, dy: 0, rotation: 0, targetX: 0, targetY: 0, moving: false };
+        let enemies = []; // Array of enemy objects
+        let folders = []; // Array of folder objects
+        let franchiseBuildings = [];
+
+        // --- MAZE DEFINITION ---
+        // A simple, fully connected maze ensuring all items are reachable.
+        // 0 = path, 1 = wall
+        const initialMaze = [
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,0,1,1],
+            [1,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,1],
+            [1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1],
+            [1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        const MAZE_WIDTH_TILES = initialMaze[0].length;
+        const MAZE_HEIGHT_TILES = initialMaze.length;
+
+        // --- GEMINI API INTEGRATION ---
+        async function getGeminiInsight(prompt) {
+            llmInsightText.textContent = "✨ Generating Insight... ✨";
+            llmInsightPopup.classList.remove('hidden');
+            llmInsightPopup.style.left = `${player.x + TILE_SIZE}px`;
+            llmInsightPopup.style.top = `${player.y - TILE_SIZE}px`;
+            llmInsightPopup.style.animation = 'none'; // Reset animation
+            llmInsightPopup.offsetHeight; // Trigger reflow
+            llmInsightPopup.style.animation = null; // Reapply animation
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = typeof __api_key !== 'undefined' ? __api_key : ''; // Use __api_key if provided by Canvas
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                // Check if the response was successful (HTTP status 200-299)
+                if (!response.ok) {
+                    const errorBody = await response.text(); // Get raw text for debugging
+                    throw new Error(`HTTP error! Status: ${response.status}, Body: ${errorBody}`);
+                }
+
+                // Attempt to parse JSON
+                let result;
+                try {
+                    result = await response.json();
+                } catch (jsonError) {
+                    const rawText = await response.text(); // Get raw text if JSON parsing fails
+                    throw new Error(`JSON parsing error: ${jsonError.message}, Raw response: ${rawText}`);
+                }
+                
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    llmInsightText.textContent = "✨ " + text + " ✨";
+                } else {
+                    llmInsightText.textContent = "✨ Insight not found. ✨";
+                }
+            } catch (error) {
+                console.error("Error fetching Gemini insight:", error);
+                llmInsightText.textContent = "✨ Error getting insight. Check console for details. ✨";
+            } finally {
+                clearTimeout(insightTimeoutId);
+                insightTimeoutId = setTimeout(() => {
+                    llmInsightPopup.classList.add('hidden');
+                }, INSIGHT_DISPLAY_TIME);
+            }
+        }
+
+        // New: Function to get game summary insight from LLM
+        async function getGameSummaryInsight(winStatus, finalScore, finalLives) {
+            gameSummaryInsight.textContent = "✨ Generating Game Summary... ✨";
+            let prompt = "";
+            if (winStatus) {
+                prompt = `The player won the MTF Arcade Game with a score of ${finalScore} and ${finalLives} lives remaining. Generate a very short (1-2 sentences) celebratory and quirky post-game analysis or a humorous 'promotion' message.`;
+            } else {
+                prompt = `The player lost the MTF Arcade Game with a score of ${finalScore} and ${finalLives} lives remaining. Generate a very short (1-2 sentences) encouraging and quirky post-game analysis or a humorous 're-training' message.`;
+            }
+
+            try {
+                let chatHistory = [];
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const payload = { contents: chatHistory };
+                const apiKey = typeof __api_key !== 'undefined' ? __api_key : '';
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    throw new Error(`HTTP error! Status: ${response.status}, Body: ${errorBody}`);
+                }
+
+                let result;
+                try {
+                    result = await response.json();
+                } catch (jsonError) {
+                    const rawText = await response.text();
+                    throw new Error(`JSON parsing error: ${jsonError.message}, Raw response: ${rawText}`);
+                }
+                
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    gameSummaryInsight.textContent = "✨ " + text + " ✨";
+                } else {
+                    gameSummaryInsight.textContent = "✨ No summary available. ✨";
+                }
+            } catch (error) {
+                console.error("Error fetching game summary insight:", error);
+                gameSummaryInsight.textContent = "✨ Error generating summary. Check console for details. ✨";
+            }
+        }
+
+
+        // Function to initialize or reset game state
+        function initGame() {
+            score = 0;
+            lives = 3;
+            scoreDisplay.textContent = score;
+            livesDisplay.textContent = lives;
+
+            maze = JSON.parse(JSON.stringify(initialMaze)); // Deep copy the maze
+
+            // Player starts at a specific path tile (e.g., 1,1)
+            player = {
+                x: (1 * TILE_SIZE) + TILE_SIZE / 2,
+                y: (1 * TILE_SIZE) + TILE_SIZE / 2,
+                dx: 0, dy: 0, rotation: 0, moving: false,
+                targetX: (1 * TILE_SIZE) + TILE_SIZE / 2,
+                targetY: (1 * TILE_SIZE) + TILE_SIZE / 2
+            };
+
+            // Initialize enemies with specific start points (on paths) and emojis
+            enemies = [
+                { id: 'Boat', emoji: '🚤', x: (8 * TILE_SIZE) + TILE_SIZE / 2, y: (1 * TILE_SIZE) + TILE_SIZE / 2, dx: 0, dy: 0, lastMoveTime: 0, targetX: 0, targetY: 0, moving: false },
+                { id: 'JetSki', emoji: '🌊', x: (10 * TILE_SIZE) + TILE_SIZE / 2, y: (3 * TILE_SIZE) + TILE_SIZE / 2, dx: 0, dy: 0, lastMoveTime: 0, targetX: 0, targetY: 0, moving: false },
+                { id: 'Holiday', emoji: '🏖️', x: (5 * TILE_SIZE) + TILE_SIZE / 2, y: (5 * TILE_SIZE) + TILE_SIZE / 2, dx: 0, dy: 0, lastMoveTime: 0, targetX: 0, targetY: 0, moving: false },
+                { id: 'Loan', emoji: '💰', x: (14 * TILE_SIZE) + TILE_SIZE / 2, y: (7 * TILE_SIZE) + TILE_SIZE / 2, dx: 0, dy: 0, lastMoveTime: 0, targetX: 0, targetY: 0, moving: false },
+                { id: 'Credit', emoji: '💳', x: (1 * TILE_SIZE) + TILE_SIZE / 2, y: (9 * TILE_SIZE) + TILE_SIZE / 2, dx: 0, dy: 0, lastMoveTime: 0, targetX: 0, targetY: 0, moving: false }
+            ];
+
+            // Initialize folders at specific reachable path tiles with emojis and names
+            folders = [
+                { x: (18 * TILE_SIZE) + TILE_SIZE / 2, y: (1 * TILE_SIZE) + TILE_SIZE / 2, collected: false, label: 'Education', emoji: '📚' },
+                { x: (1 * TILE_SIZE) + TILE_SIZE / 2, y: (3 * TILE_SIZE) + TILE_SIZE / 2, collected: false, label: 'Video Production', emoji: '🎬' },
+                { x: (18 * TILE_SIZE) + TILE_SIZE / 2, y: (5 * TILE_SIZE) + TILE_SIZE / 2, collected: false, label: 'Science & Tech', emoji: '🔬' },
+                { x: (10 * TILE_SIZE) + TILE_SIZE / 2, y: (11 * TILE_SIZE) + TILE_SIZE / 2, collected: false, label: 'Photography', emoji: '📸' }
+            ];
+
+            // Initialize franchise buildings at specific reachable path tiles with emojis and names
+            franchiseBuildings = [
+                { x: (12 * TILE_SIZE) + TILE_SIZE / 2, y: (1 * TILE_SIZE) + TILE_SIZE / 2, visited: false, label: 'Headquarters', emoji: '🏢' },
+                { x: (18 * TILE_SIZE) + TILE_SIZE / 2, y: (3 * TILE_SIZE) + TILE_SIZE / 2, visited: false, label: 'Branch Office', emoji: '🏦' },
+                { x: (1 * TILE_SIZE) + TILE_SIZE / 2, y: (7 * TILE_SIZE) + TILE_SIZE / 2, visited: false, label: 'Innovation Hub', emoji: '💡' },
+                { x: (18 * TILE_SIZE) + TILE_SIZE / 2, y: (9 * TILE_SIZE) + TILE_SIZE / 2, visited: false, label: 'Community Center', emoji: '🏘️' }
+            ];
+
+            gameInfo.style.display = 'block';
+            startScreen.classList.add('hidden');
+            endScreen.classList.add('hidden');
+            llmInsightPopup.classList.add('hidden'); // Ensure insight popup is hidden
+            gameRunning = true;
+            gameLoop(); // Start the game loop
+        }
+
+        // Function to check if a tile is a wall
+        function isWall(x, y) {
+            const col = Math.floor(x / TILE_SIZE);
+            const row = Math.floor(y / TILE_SIZE);
+            if (row < 0 || row >= MAZE_HEIGHT_TILES || col < 0 || col >= MAZE_WIDTH_TILES) {
+                return true; // Out of bounds is a wall
+            }
+            return maze[row][col] === 1;
+        }
+
+        // Function to update game state (movement, collisions, etc.)
+        function update() {
+            if (!gameRunning) return;
+
+            // --- Player Movement ---
+            // Move player towards target if not already at target
+            if (player.moving) {
+                const distToTargetX = player.targetX - player.x;
+                const distToTargetY = player.targetY - player.y;
+
+                if (Math.abs(distToTargetX) > PLAYER_SPEED || Math.abs(distToTargetY) > PLAYER_SPEED) {
+                    player.x += Math.sign(distToTargetX) * PLAYER_SPEED;
+                    player.y += Math.sign(distToTargetY) * PLAYER_SPEED;
+                } else {
+                    player.x = player.targetX;
+                    player.y = player.targetY;
+                    player.moving = false;
+                }
+            }
+
+
+            // --- Enemy Movement (Basic Random Walk within paths) ---
+            const currentTime = Date.now();
+            enemies.forEach(enemy => {
+                // If enemy is not currently moving to a target, pick a new one
+                if (!enemy.moving || Math.abs(enemy.x - enemy.targetX) < ENEMY_SPEED && Math.abs(enemy.y - enemy.targetY) < ENEMY_SPEED) {
+                    enemy.x = enemy.targetX || enemy.x; // Snap to grid if close
+                    enemy.y = enemy.targetY || enemy.y; // Snap to grid if close
+                    enemy.moving = false;
+
+                    if (currentTime - enemy.lastMoveTime > ENEMY_MOVE_INTERVAL) {
+                        const directions = [
+                            { dx: TILE_SIZE, dy: 0 }, { dx: -TILE_SIZE, dy: 0 },
+                            { dx: 0, dy: TILE_SIZE }, { dx: 0, dy: -TILE_SIZE }
+                        ];
+                        let validMoveFound = false;
+                        let attempts = 0;
+
+                        while (!validMoveFound && attempts < 4) { // Try all 4 directions
+                            const randomDir = directions[Math.floor(Math.random() * directions.length)];
+                            const nextTargetX = Math.floor(enemy.x / TILE_SIZE) * TILE_SIZE + randomDir.dx + TILE_SIZE / 2;
+                            const nextTargetY = Math.floor(enemy.y / TILE_SIZE) * TILE_SIZE + randomDir.dy + TILE_SIZE / 2;
+
+                            if (!isWall(nextTargetX, nextTargetY)) {
+                                enemy.targetX = nextTargetX;
+                                enemy.targetY = nextTargetY;
+                                enemy.moving = true;
+                                validMoveFound = true;
+                            }
+                            attempts++;
+                        }
+                        enemy.lastMoveTime = currentTime;
+                    }
+                }
+
+                // Move enemy towards target
+                if (enemy.moving) {
+                    const distToTargetX = enemy.targetX - enemy.x;
+                    const distToTargetY = enemy.targetY - enemy.y;
+
+                    if (Math.abs(distToTargetX) > ENEMY_SPEED || Math.abs(distToTargetY) > ENEMY_SPEED) {
+                        enemy.x += Math.sign(distToTargetX) * ENEMY_SPEED;
+                        enemy.y += Math.sign(distToTargetY) * ENEMY_SPEED;
+                    } else {
+                        enemy.x = enemy.targetX;
+                        enemy.y = enemy.targetY;
+                        enemy.moving = false;
+                    }
+                }
+            });
+
+
+            // --- Collectible Logic (Folders) ---
+            folders.forEach(folder => {
+                if (!folder.collected) {
+                    const dist = Math.sqrt(Math.pow(player.x - folder.x, 2) + Math.pow(player.y - folder.y, 2));
+                    if (dist < TILE_SIZE * 0.7) { // Player is close enough to collect
+                        folder.collected = true;
+                        score += 100;
+                        scoreDisplay.textContent = score;
+                        playSound(880, 0.1, 'triangle', 0.5); // Play pickup sound
+
+                        // ✨ Call Gemini API for Folder Insight ✨
+                        const prompt = `Generate a very short (1-2 sentences) quirky career tip or insight related to "${folder.label}" for someone navigating a professional journey at a company like MTF.`;
+                        getGeminiInsight(prompt);
+                    }
+                }
+            });
+
+            // --- Collectible Logic (Franchise Buildings) ---
+            franchiseBuildings.forEach(building => {
+                if (!building.visited) {
+                    const dist = Math.sqrt(Math.pow(player.x - building.x, 2) + Math.pow(player.y - building.y, 2));
+                    if (dist < TILE_SIZE * 0.7) { // Player is close enough to visit
+                        building.visited = true;
+                        score += 50;
+                        scoreDisplay.textContent = score;
+                        playSound(880, 0.1, 'triangle', 0.5); // Play pickup sound (can be a different one if desired)
+
+                        // ✨ Call Gemini API for Building Insight ✨
+                        const prompt = `Generate a very short (1-2 sentences) quirky insight about teamwork or reaching milestones at a company like MTF, inspired by visiting a "${building.label}".`;
+                        getGeminiInsight(prompt);
+                    }
+                }
+            });
+
+            // --- Enemy Collision ---
+            enemies.forEach(enemy => {
+                const dist = Math.sqrt(Math.pow(player.x - enemy.x, 2) + Math.pow(player.y - enemy.y, 2));
+                if (dist < TILE_SIZE * 0.7) { // Collision detected
+                    lives--;
+                    livesDisplay.textContent = lives;
+                    playSound(220, 0.2, 'sawtooth', 0.7);
+
+                    // ✨ Call Gemini API for Enemy Encounter Insight ✨
+                    const prompt = `The player just encountered a "${enemy.id}" obstacle in an office-themed arcade game. Generate a very short (1-2 sentences) humorous or challenging statement from the perspective of this obstacle.`;
+                    getGeminiInsight(prompt);
+
+                    if (lives <= 0) {
+                        gameOver(false); // Game Over (lost all lives)
+                    } else {
+                        // Respawn player at start point
+                        player.x = (1 * TILE_SIZE) + TILE_SIZE / 2;
+                        player.y = (1 * TILE_SIZE) + TILE_SIZE / 2;
+                        player.dx = 0;
+                        player.dy = 0;
+                        player.moving = false;
+                        player.targetX = player.x;
+                        player.targetY = player.y;
+                    }
+                }
+            });
+
+            // --- Win Condition ---
+            const allFoldersCollected = folders.every(f => f.collected);
+            const allBuildingsVisited = franchiseBuildings.every(b => b.visited);
+            if (allFoldersCollected && allBuildingsVisited) {
+                gameOver(true); // Game Won!
+            }
+        }
+
+        // Function to draw everything on the canvas
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear canvas
+
+            // --- Draw Maze ---
+            ctx.fillStyle = '#000000'; // Path color
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#0000FF'; // Blue for maze walls (cubicles/road barriers)
+            for (let r = 0; r < MAZE_HEIGHT_TILES; r++) {
+                for (let c = 0; c < MAZE_WIDTH_TILES; c++) {
+                    if (maze[r][c] === 1) {
+                        ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    }
+                }
+            }
+
+            // --- Draw Collectibles (Folders) ---
+            folders.forEach(folder => {
+                if (!folder.collected) {
+                    ctx.font = `${EMOJI_FONT_SIZE}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(folder.emoji, folder.x, folder.y);
+
+                    ctx.fillStyle = '#FFFFFF'; // White text
+                    ctx.font = `${LABEL_FONT_SIZE}px "Press Start 2P"`;
+                    ctx.fillText(folder.label, folder.x, folder.y + TILE_SIZE * 0.4); // Display label below emoji
+                }
+            });
+
+            // --- Draw Franchise Buildings ---
+            franchiseBuildings.forEach(building => {
+                if (!building.visited) {
+                    ctx.font = `${EMOJI_FONT_SIZE}px sans-serif`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(building.emoji, building.x, building.y);
+
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = `${LABEL_FONT_SIZE}px "Press Start 2P"`;
+                    ctx.fillText(building.label, building.x, building.y + TILE_SIZE * 0.4); // Display label below emoji
+                }
+            });
+
+            // --- Draw Player Car (Red, Emoji-style) ---
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.rotation);
+            ctx.font = `${EMOJI_FONT_SIZE}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🚗', 0, 0); // Red car emoji
+            ctx.restore();
+
+            // --- Draw Enemies (Emoji-style with names) ---
+            enemies.forEach(enemy => {
+                ctx.save();
+                ctx.translate(enemy.x, enemy.y);
+                ctx.font = `${EMOJI_FONT_SIZE}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(enemy.emoji, 0, 0);
+
+                ctx.fillStyle = '#FFFFFF'; // White text for enemy labels
+                ctx.font = `${LABEL_FONT_SIZE}px "Press Start 2P"`;
+                ctx.fillText(enemy.id, 0, TILE_SIZE * 0.4); // Display enemy ID below emoji
+                ctx.restore();
+            });
+        }
+
+        // --- GAME LOOP ---
+        function gameLoop() {
+            if (gameRunning) {
+                update();
+                draw();
+                animationFrameId = requestAnimationFrame(gameLoop); // Request next frame
+            }
+        }
+
+        // --- ENDGAME ---
+        function gameOver(win) {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId); // Stop the game loop
+            gameInfo.style.display = 'none';
+            endScreen.classList.remove('hidden');
+            llmInsightPopup.classList.add('hidden'); // Hide insight popup on game over
+
+            // ✨ Call Gemini API for Game Summary Insight ✨
+            getGameSummaryInsight(win, score, lives);
+
+            if (win) {
+                endMessage.textContent = "CONGRATULATIONS! YOU DELIVERED!";
+                endSubMessage.textContent = "Your journey to MTF is complete!";
+                portfolioButton.classList.remove('hidden');
+                restartButton.classList.add('hidden'); // Hide restart, show portfolio
+                mtfWebsiteButton.classList.remove('hidden');
+            } else {
+                endMessage.textContent = "GAME OVER!";
+                endSubMessage.textContent = "Get more credit at MTF!";
+                mtfWebsiteButton.classList.remove('hidden');
+                restartButton.classList.remove('hidden');
+                portfolioButton.classList.add('hidden'); // Hide portfolio, show restart
+            }
+        }
+
+        // --- EVENT LISTENERS ---
+        startButton.addEventListener('click', () => {
+            // Initialize AudioContext on user gesture
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            initGame();
+        });
+
+        restartButton.addEventListener('click', () => {
+            initGame();
+        });
+
+        portfolioButton.addEventListener('click', () => {
+            window.open('https://spotty-stingray-a11.notion.site/Hi-I-am-Marco-a-human-interface-content-generator-1f12d82b26dd80239545ee40bbb9b3e6', '_blank'); // Updated portfolio link
+        });
+
+        mtfWebsiteButton.addEventListener('click', () => {
+            window.open('https://www.mtf.co.nz', '_blank'); // Placeholder link
+        });
+
+        // Handle keyboard input for player movement
+        document.addEventListener('keydown', (e) => {
+            if (!gameRunning || player.moving) return; // Prevent new movement if already moving
+
+            let nextTileX = Math.floor(player.x / TILE_SIZE);
+            let nextTileY = Math.floor(player.y / TILE_SIZE);
+            let newRotation = player.rotation;
+
+            switch (e.key) {
+                case 'ArrowUp':
+                case 'w':
+                    nextTileY--;
+                    newRotation = -Math.PI / 2;
+                    break;
+                case 'ArrowDown':
+                case 's':
+                    nextTileY++;
+                    newRotation = Math.PI / 2;
+                    break;
+                case 'ArrowLeft':
+                case 'a':
+                    nextTileX--;
+                    newRotation = Math.PI;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    nextTileX++;
+                    newRotation = 0;
+                    break;
+                default:
+                    return; // Ignore other keys
+            }
+
+            // Check if the next tile is a wall
+            if (!isWall(nextTileX * TILE_SIZE + TILE_SIZE / 2, nextTileY * TILE_SIZE + TILE_SIZE / 2)) {
+                player.targetX = nextTileX * TILE_SIZE + TILE_SIZE / 2;
+                player.targetY = nextTileY * TILE_SIZE + TILE_SIZE / 2;
+                player.rotation = newRotation;
+                player.moving = true;
+            }
+        });
+
+        // Add touch controls for mobile
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchThreshold = 20; // Minimum swipe distance to register a move
+
+        canvas.addEventListener('touchstart', e => {
+            if (!gameRunning) return;
+            e.preventDefault(); // Prevent scrolling
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        });
+
+        canvas.addEventListener('touchend', e => {
+            if (!gameRunning || player.moving) return;
+            e.preventDefault(); // Prevent scrolling
+
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+
+            let nextTileX = Math.floor(player.x / TILE_SIZE);
+            let nextTileY = Math.floor(player.y / TILE_SIZE);
+            let newRotation = player.rotation;
+
+            // Determine direction based on largest difference and threshold
+            if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > touchThreshold) {
+                // Horizontal swipe
+                if (diffX > 0) {
+                    nextTileX++;
+                    newRotation = 0; // Right
+                } else {
+                    nextTileX--;
+                    newRotation = Math.PI; // Left
+                }
+            } else if (Math.abs(diffY) > Math.abs(diffX) && Math.abs(diffY) > touchThreshold) {
+                // Vertical swipe
+                if (diffY > 0) {
+                    nextTileY++;
+                    newRotation = Math.PI / 2; // Down
+                } else {
+                    nextTileY--;
+                    newRotation = -Math.PI / 2; // Up
+                }
+            } else {
+                return; // Not a significant swipe, ignore
+            }
+
+            // Check if the next tile is a wall
+            if (!isWall(nextTileX * TILE_SIZE + TILE_SIZE / 2, nextTileY * TILE_SIZE + TILE_SIZE / 2)) {
+                player.targetX = nextTileX * TILE_SIZE + TILE_SIZE / 2;
+                player.targetY = nextTileY * TILE_SIZE + TILE_SIZE / 2;
+                player.rotation = newRotation;
+                player.moving = true;
+            }
+        });
+
+        // Adjust canvas size on window resize for responsiveness
+        function resizeCanvas() {
+            // The canvas width/height attributes are fixed for pixel art consistency.
+            // Responsiveness is handled by CSS max-width and width: 100%.
+            // If you wanted the game world to dynamically resize, you'd calculate width/height here
+            // and re-calculate all positions and sizes relative to the new canvas dimensions.
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        // Initial call to set canvas size
+        resizeCanvas();
+
+        // Initial setup (show start screen)
+        window.onload = function() {
+            startScreen.classList.remove('hidden');
+        };
+    </script>
+</body>
+</html>
